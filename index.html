@@ -10,12 +10,12 @@
 
 <style>
   body { background: #0f0f0f; color: #fff; }
- .player-wrapper {
+.player-wrapper {
     background: #1a1a1a;
     border-radius: 16px;
     padding: 20px;
   }
- .ratio-16x9 { border-radius: 12px; overflow: hidden; }
+.ratio-16x9 { border-radius: 12px; overflow: hidden; }
 
   input[type="range"] {
     -webkit-appearance: none;
@@ -29,15 +29,15 @@
     background: #ff0000; border-radius: 50%;
   }
 
- .controls {
+.controls {
     display: flex; align-items: center; justify-content: center;
     gap: 20px; margin-top: 20px;
   }
- .controls button {
+.controls button {
     background: transparent; border: none; color: #fff;
     font-size: 28px; padding: 8px;
   }
- .play-btn {
+.play-btn {
     width: 60px; height: 60px;
     background: #ff0000;
     border-radius: 50%;
@@ -45,20 +45,20 @@
     font-size: 28px!important;
   }
 
- .load-box input {
+.load-box input {
     background: #222;
     border: 1px solid #333;
     color: #fff;
   }
 
- .playlist {
+.playlist {
     margin-top: 16px;
     max-height: 0;
     overflow: hidden;
     transition: max-height 0.4s ease;
   }
- .playlist.show { max-height: 400px; overflow-y: auto; }
- .playlist-item {
+.playlist.show { max-height: 400px; overflow-y: auto; }
+.playlist-item {
     padding: 10px;
     border-radius: 8px;
     cursor: pointer;
@@ -67,11 +67,11 @@
     align-items: center;
     font-size: 14px;
   }
- .playlist-item:hover { background: rgba(255,255,255,0.08); }
- .playlist-item.active { background: rgba(255,0,0,0.2); }
- .playlist-item img { width: 80px; height: 45px; border-radius: 4px; object-fit: cover; }
- .playlist-item .meta { flex: 1; }
- .playlist-item small { opacity: 0.7; }
+.playlist-item:hover { background: rgba(255,255,255,0.08); }
+.playlist-item.active { background: rgba(255,0,0,0.2); }
+.playlist-item img { width: 80px; height: 45px; border-radius: 4px; object-fit: cover; }
+.playlist-item.meta { flex: 1; }
+.playlist-item small { opacity: 0.7; }
 </style>
 </head>
 <body>
@@ -115,7 +115,7 @@
 </div>
 
 <script>
-  let player, playlistData = [], currentIndex = 0;
+  let player, playlistIds = [], playlistData = [], currentIndex = 0;
   let isPlaying = false, isLoop = false;
   const DEFAULT_PLAYLIST = 'PL0wqt_um4x0bsdViTJBmnl6KGMoSqxfZy';
 
@@ -127,7 +127,7 @@
     loadPlaylist(DEFAULT_PLAYLIST);
   }
 
-  async function loadPlaylist(input) {
+  function loadPlaylist(input) {
     const playlistId = extractPlaylistId(input);
     if (!playlistId.startsWith('PL')) {
       alert('Playlist ID salah. Harus mulai dengan PL');
@@ -135,50 +135,59 @@
     }
 
     document.getElementById('playlistInput').value = playlistId;
-    document.getElementById('playlistItems').innerHTML = 'Loading judul video...';
+    document.getElementById('playlistItems').innerHTML = 'Loading...';
 
-    try {
-      // Ambil data playlist + judul pakai Invidious
-      const res = await fetch(`https://invidious.io/api/v1/playlists/${playlistId}`);
-      if (!res.ok) throw new Error('Gagal load playlist');
-      
-      const data = await res.json();
-      playlistData = data.videos.map(v => ({
-        id: v.videoId,
-        title: v.title,
-        channel: v.author,
-        duration: v.lengthSeconds
-      }));
+    if (player) player.destroy();
 
-      // Buat player
-      if (player) player.destroy();
-      player = new YT.Player('player', {
-        height: '100%',
-        width: '100%',
-        videoId: playlistData[0].id,
-        playerVars: {
-          controls: 0,
-          rel: 0,
-          modestbranding: 1,
-          enablejsapi: 1
-        },
-        events: {
-          'onReady': onPlayerReady,
-          'onStateChange': onPlayerStateChange
-        }
-      });
-
-      buildPlaylistUI();
-
-    } catch (e) {
-      console.error(e);
-      document.getElementById('playlistItems').innerHTML = 'Gagal load. Pastikan playlist public';
-    }
+    player = new YT.Player('player', {
+      height: '100%',
+      width: '100%',
+      playerVars: {
+        listType: 'playlist',
+        list: playlistId,
+        controls: 0,
+        rel: 0,
+        modestbranding: 1,
+        enablejsapi: 1,
+        index: 0
+      },
+      events: {
+        'onReady': onPlayerReady,
+        'onStateChange': onPlayerStateChange
+      }
+    });
   }
 
   function onPlayerReady() {
-    updateVideoInfo();
+    playlistIds = player.getPlaylist() || [];
+    currentIndex = player.getPlaylistIndex();
+
+    fetchTitles(playlistIds);
     setInterval(updateProgress, 500);
+  }
+
+  async function fetchTitles(ids) {
+    playlistData = [];
+
+    // Ambil judul pakai oembed + allorigins biar nggak kena CORS
+    for (let i = 0; i < ids.length; i++) {
+      try {
+        const url = `https://www.youtube.com/watch?v=${ids[i]}`;
+        const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+        const match = data.contents.match(/<title>(.*?) - YouTube<\/title>/);
+        const title = match? match[1] : `Video ${i+1}`;
+
+        playlistData.push({ id: ids[i], title: title });
+
+        // Update UI tiap dapet 1 judul biar nggak lama nunggu
+        buildPlaylistUI();
+      } catch (e) {
+        playlistData.push({ id: ids[i], title: `Video ${i+1}` });
+      }
+    }
+
+    updateVideoInfo();
   }
 
   function onPlayerStateChange(e) {
@@ -186,11 +195,13 @@
     document.getElementById('playPause').innerHTML =
       isPlaying? '<i class="bi bi-pause-fill"></i>' : '<i class="bi bi-play-fill"></i>';
 
+    currentIndex = player.getPlaylistIndex();
+
     if (isPlaying) {
       updateVideoInfo();
     }
 
-    if (e.data === YT.PlayerState.ENDED && !isLoop) {
+    if (e.data === YT.PlayerState.ENDED &&!isLoop) {
       nextVideo();
     }
   }
@@ -198,7 +209,7 @@
   function buildPlaylistUI() {
     const container = document.getElementById('playlistItems');
     container.innerHTML = '';
-    
+
     playlistData.forEach((item, i) => {
       const div = document.createElement('div');
       div.className = 'playlist-item';
@@ -206,7 +217,7 @@
         <img src="https://i.ytimg.com/vi/${item.id}/mqdefault.jpg" alt="">
         <div class="meta">
           <div>${item.title}</div>
-          <small>${item.channel} • ${formatTime(item.duration)}</small>
+          <small>Video ${i+1}</small>
         </div>
       `;
       div.onclick = () => loadVideo(i);
@@ -217,8 +228,8 @@
   }
 
   function updateVideoInfo() {
-    const item = playlistData[currentIndex];
-    document.getElementById('videoTitle').textContent = item.title;
+    if (!playlistData[currentIndex]) return;
+    document.getElementById('videoTitle').textContent = playlistData[currentIndex].title;
     document.getElementById('duration').textContent = formatTime(player.getDuration());
     document.getElementById('seek').max = player.getDuration();
     updateActivePlaylistItem();
@@ -226,17 +237,15 @@
 
   function loadVideo(index) {
     currentIndex = index;
-    player.loadVideoById(playlistData[index].id);
+    player.playVideoAt(index);
   }
 
   function nextVideo() {
-    currentIndex = (currentIndex + 1) % playlistData.length;
-    loadVideo(currentIndex);
+    player.nextVideo();
   }
 
   function prevVideo() {
-    currentIndex = (currentIndex - 1 + playlistData.length) % playlistData.length;
-    loadVideo(currentIndex);
+    player.previousVideo();
   }
 
   function updateActivePlaylistItem() {
