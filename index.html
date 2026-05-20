@@ -107,7 +107,7 @@
         <h6 id="videoTitle" class="mt-3 text-center"></h6>
 
         <div class="playlist" id="playlist">
-          <div id="playlistItems" class="text-center text-secondary">Load playlist dulu</div>
+          <div id="playlistItems" class="text-center text-secondary">Loading playlist...</div>
         </div>
       </div>
     </div>
@@ -117,13 +117,17 @@
 <script>
   let player, playlistIds = [], currentIndex = 0;
   let isPlaying = false, isLoop = false;
+  const DEFAULT_PLAYLIST = 'PL0wqt_um4x0bsdViTJBmnl6KGMoSqxfZy';
 
   // Load YouTube API
   const tag = document.createElement('script');
   tag.src = "https://www.youtube.com/iframe_api";
   document.head.appendChild(tag);
 
-  function onYouTubeIframeAPIReady() {}
+  function onYouTubeIframeAPIReady() {
+    // Auto load default playlist pas API ready
+    loadPlaylist(DEFAULT_PLAYLIST);
+  }
 
   function loadPlaylist(input) {
     const playlistId = extractPlaylistId(input);
@@ -132,9 +136,9 @@
       return;
     }
 
+    document.getElementById('playlistInput').value = playlistId;
     document.getElementById('playlistItems').innerHTML = 'Loading...';
 
-    // Buat player dengan playlist
     if (player) {
       player.destroy();
     }
@@ -159,10 +163,8 @@
   }
 
   function onPlayerReady() {
-    // Ambil daftar video dari playlist
     playlistIds = player.getPlaylist();
     
-    // Tunggu 500ms biar data judul ke-load
     setTimeout(() => {
       buildPlaylistUI();
       updateVideoInfo();
@@ -205,7 +207,6 @@
       container.appendChild(div);
     });
 
-    // Update judul tiap item
     updatePlaylistTitles();
   }
 
@@ -295,11 +296,10 @@
     return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
   }
 
-  // Auto load dari URL
+  // Cek URL param dulu, kalau nggak ada pakai default
   const urlList = new URLSearchParams(window.location.search).get('list');
   if (urlList) {
     document.getElementById('playlistInput').value = urlList;
-    loadPlaylist(urlList);
   }
 </script>
 </body>
