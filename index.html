@@ -115,21 +115,19 @@
 </div>
 
 <script>
-  let player, playlistIds = [], currentIndex = 0;
+  let player, playlistData = [], currentIndex = 0;
   let isPlaying = false, isLoop = false;
   const DEFAULT_PLAYLIST = 'PL0wqt_um4x0bsdViTJBmnl6KGMoSqxfZy';
 
-  // Load YouTube API
   const tag = document.createElement('script');
   tag.src = "https://www.youtube.com/iframe_api";
   document.head.appendChild(tag);
 
   function onYouTubeIframeAPIReady() {
-    // Auto load default playlist pas API ready
     loadPlaylist(DEFAULT_PLAYLIST);
   }
 
-  function loadPlaylist(input) {
+  async function loadPlaylist(input) {
     const playlistId = extractPlaylistId(input);
     if (!playlistId.startsWith('PL')) {
       alert('Playlist ID salah. Harus mulai dengan PL');
@@ -137,39 +135,50 @@
     }
 
     document.getElementById('playlistInput').value = playlistId;
-    document.getElementById('playlistItems').innerHTML = 'Loading...';
+    document.getElementById('playlistItems').innerHTML = 'Loading judul video...';
 
-    if (player) {
-      player.destroy();
+    try {
+      // Ambil data playlist + judul pakai Invidious
+      const res = await fetch(`https://invidious.io/api/v1/playlists/${playlistId}`);
+      if (!res.ok) throw new Error('Gagal load playlist');
+      
+      const data = await res.json();
+      playlistData = data.videos.map(v => ({
+        id: v.videoId,
+        title: v.title,
+        channel: v.author,
+        duration: v.lengthSeconds
+      }));
+
+      // Buat player
+      if (player) player.destroy();
+      player = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: playlistData[0].id,
+        playerVars: {
+          controls: 0,
+          rel: 0,
+          modestbranding: 1,
+          enablejsapi: 1
+        },
+        events: {
+          'onReady': onPlayerReady,
+          'onStateChange': onPlayerStateChange
+        }
+      });
+
+      buildPlaylistUI();
+
+    } catch (e) {
+      console.error(e);
+      document.getElementById('playlistItems').innerHTML = 'Gagal load. Pastikan playlist public';
     }
-
-    player = new YT.Player('player', {
-      height: '100%',
-      width: '100%',
-      playerVars: {
-        listType: 'playlist',
-        list: playlistId,
-        controls: 0,
-        rel: 0,
-        modestbranding: 1,
-        enablejsapi: 1,
-        index: 0
-      },
-      events: {
-        'onReady': onPlayerReady,
-        'onStateChange': onPlayerStateChange
-      }
-    });
   }
 
   function onPlayerReady() {
-    playlistIds = player.getPlaylist();
-    
-    setTimeout(() => {
-      buildPlaylistUI();
-      updateVideoInfo();
-      setInterval(updateProgress, 500);
-    }, 500);
+    updateVideoInfo();
+    setInterval(updateProgress, 500);
   }
 
   function onPlayerStateChange(e) {
@@ -177,10 +186,7 @@
     document.getElementById('playPause').innerHTML =
       isPlaying? '<i class="bi bi-pause-fill"></i>' : '<i class="bi bi-play-fill"></i>';
 
-    currentIndex = player.getPlaylistIndex();
-
     if (isPlaying) {
-      document.title = player.getVideoData().title;
       updateVideoInfo();
     }
 
@@ -193,51 +199,44 @@
     const container = document.getElementById('playlistItems');
     container.innerHTML = '';
     
-    playlistIds.forEach((id, i) => {
+    playlistData.forEach((item, i) => {
       const div = document.createElement('div');
       div.className = 'playlist-item';
       div.innerHTML = `
-        <img src="https://i.ytimg.com/vi/${id}/mqdefault.jpg" alt="">
+        <img src="https://i.ytimg.com/vi/${item.id}/mqdefault.jpg" alt="">
         <div class="meta">
-          <div>Loading...</div>
-          <small></small>
+          <div>${item.title}</div>
+          <small>${item.channel} • ${formatTime(item.duration)}</small>
         </div>
       `;
       div.onclick = () => loadVideo(i);
       container.appendChild(div);
     });
 
-    updatePlaylistTitles();
-  }
-
-  function updatePlaylistTitles() {
-    document.querySelectorAll('.playlist-item').forEach((el, i) => {
-      if (i === currentIndex) {
-        el.querySelector('div').textContent = player.getVideoData().title;
-      }
-    });
+    updateActivePlaylistItem();
   }
 
   function updateVideoInfo() {
-    const data = player.getVideoData();
-    document.getElementById('videoTitle').textContent = data.title;
+    const item = playlistData[currentIndex];
+    document.getElementById('videoTitle').textContent = item.title;
     document.getElementById('duration').textContent = formatTime(player.getDuration());
     document.getElementById('seek').max = player.getDuration();
     updateActivePlaylistItem();
-    updatePlaylistTitles();
   }
 
   function loadVideo(index) {
     currentIndex = index;
-    player.playVideoAt(index);
+    player.loadVideoById(playlistData[index].id);
   }
 
   function nextVideo() {
-    player.nextVideo();
+    currentIndex = (currentIndex + 1) % playlistData.length;
+    loadVideo(currentIndex);
   }
 
   function prevVideo() {
-    player.previousVideo();
+    currentIndex = (currentIndex - 1 + playlistData.length) % playlistData.length;
+    loadVideo(currentIndex);
   }
 
   function updateActivePlaylistItem() {
@@ -296,7 +295,7 @@
     return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
   }
 
-  // Cek URL param dulu, kalau nggak ada pakai default
+  // Auto load dari URL param
   const urlList = new URLSearchParams(window.location.search).get('list');
   if (urlList) {
     document.getElementById('playlistInput').value = urlList;
